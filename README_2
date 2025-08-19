@@ -1,0 +1,78 @@
+In simple terms, Skyfield’s find_discrete function is a tool that efficiently finds times when a condition changes, like when two satellites go from being visible to not visible (or vice versa) in your satellite-to-satellite access algorithm. It’s designed to avoid checking every tiny time step, making it much faster than brute-force methods. Here’s a clear, concise explanation of how it works, tailored to your use case.
+What find_discrete Does
+find_discrete searches for points in time within a given window (from t0 to t1) where a function switches between discrete states, such as 0.0 (not visible) and 1.0 (visible). In your code, this is used to detect when the visibility between two satellites changes due to the Earth blocking the line of sight or the distance exceeding the maximum allowed.
+How It Works (Step-by-Step)
+
+Inputs:
+
+Start and End Times (t0, t1): These are Skyfield Time objects defining the time window (e.g., 12:00 to 13:00).
+Function (visibility_func): A function that takes a time (or array of times) and returns a float (e.g., 1.0 for visible, 0.0 for not visible).
+Step Size (stepsize): A time interval (in days, e.g., 30 seconds = 30.0 / 86400.0) that controls how finely it initially samples the time window.
+
+
+Initial Sampling:
+
+find_discrete evaluates the visibility_func at regular intervals (every stepsize) across the time window. For example, if stepsize is 30 seconds, it checks visibility at 12:00:00, 12:00:30, 12:01:00, etc.
+This creates a sequence of values, like [1.0, 1.0, 0.0, 0.0, 1.0], showing visibility at each step.
+
+
+Detecting Transitions:
+
+It looks for places where the function’s output changes (e.g., from 1.0 to 0.0 or 0.0 to 1.0). These are potential visibility transitions (e.g., when the Earth starts or stops blocking the satellites).
+For each change, it narrows down the exact time of the transition using a binary search (or similar root-finding method).
+
+
+Binary Search for Precision:
+
+When it finds a change (e.g., 1.0 at 12:00:00 and 0.0 at 12:00:30), it zooms in on the interval (12:00:00 to 12:00:30) and repeatedly evaluates visibility_func at smaller time steps to pinpoint the exact moment of the switch (e.g., 12:00:14.237).
+This is much faster than checking every second, as it halves the search interval with each step.
+
+
+Output:
+
+Returns two lists:
+
+times: A list of Skyfield Time objects where transitions occur (e.g., [t1, t2, t3] for times when visibility changes).
+values: The corresponding function values at those times (e.g., [1.0, 0.0, 1.0]).
+
+
+In your code, these are converted to datetime objects and used to define the start and end of access periods.
+
+
+
+Example in Your Context
+In your satellite-to-satellite access code:
+
+Function: visibility_func checks if two satellites are visible by calculating:
+
+If the Earth blocks the line of sight (using vector math to check occultation).
+If the distance between satellites is within the maximum allowed (e.g., 10,000 km).
+It returns 1.0 (visible) or 0.0 (not visible).
+
+
+Time Window: Say, 12:00 to 13:00.
+Step Size: 30 seconds (30.0 / 86400.0 days).
+Process:
+
+find_discrete checks visibility every 30 seconds.
+If it sees a change (e.g., 1.0 to 0.0 between 12:15:00 and 12:15:30), it uses binary search to find the precise time (e.g., 12:15:14.237).
+Outputs times like [12:15:14.237, 12:30:22.891] with values [0.0, 1.0], meaning visibility ended at 12:15:14.237 and started again at 12:30:22.891.
+
+
+Access Creation: Your code uses these transitions to build Access objects (e.g., an access from 12:00 to 12:15:14.237, another from 12:30:22.891 to 13:00).
+
+Why It’s Efficient
+
+Avoids Brute Force: Instead of checking every 0.5 seconds (7,200 checks for 1 hour), it starts with coarse steps (e.g., 120 checks for 30-second steps) and only refines where changes occur.
+Binary Search: Pinpoints transitions in just a few evaluations (e.g., 10–20 per transition) rather than checking every possible time.
+Handles Complex Functions: Works with any function that returns discrete values (like 0.0/1.0), making it perfect for visibility checks.
+
+Key Notes
+
+Step Size Matters: A smaller stepsize (e.g., 10 seconds) is more accurate but slower; a larger one (e.g., 60 seconds) is faster but might miss brief transitions. Your code uses 30 seconds, which is a good balance for typical satellite orbits.
+Function Requirements: visibility_func must be vectorized (handle arrays of times) and return floats (e.g., 1.0/0.0). Your code does this correctly with NumPy.
+Skyfield Integration: find_discrete uses Skyfield’s precise time handling, ensuring accurate orbital calculations.
+
+Analogy
+Think of find_discrete as a smart hiker looking for places where a trail crosses a river (visibility changes). Instead of checking every step along the path, they check every 100 meters, note where the trail goes from dry to wet, and then backtrack to find the exact crossing point. This saves time while still finding the key spots.
+If you want a deeper dive into the math (e.g., how binary search works in find_discrete) or help tuning the step size, let me know!
