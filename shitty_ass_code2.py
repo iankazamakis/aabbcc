@@ -36,9 +36,6 @@ class OrbitalAccessGen:
         # retrieve or compute positions
         target_geo = self._get_or_propagate_positions(target, start_time, end_time, times)
         observer_geo = self._get_or_propagate_positions(observer, start_time, end_time, times)
-        pos_target = target_geo.position.km
-        pos_observer = observer_geo.position.km
-        distances = np.sqrt(np.sum((pos_observer - pos_target) ** 2, axis=0)) # euclidean distance between satellites at each time
 
         def visibility_function(t: Time) -> np.ndarray:
             """Check if satellites are in range and not occluded at given times."""
