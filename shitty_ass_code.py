@@ -1,4 +1,5 @@
 import numpy as np
+import time
 from skyfield.api import load, EarthSatellite, Time, utc
 from datetime import datetime, timedelta
 from numpy import linspace, multiply, flatnonzero, diff
@@ -109,39 +110,65 @@ def compute_access_windows(sat1: EarthSatellite, sat2: EarthSatellite, start_tim
     calculator = SatelliteAccessCalculator(ts, time_step=timedelta(seconds=30))
     return calculator.find_access_windows(sat1, sat2, start_time, end_time)
 
-# Example usage with timeit
 if __name__ == "__main__":
     from skyfield.api import load, EarthSatellite
-    import timeit
 
     # Load timescale
     ts = load.timescale()
 
-    # Example satellites (replace with actual TLE data)
-    tle1 = ["1 25544U 98067A   25236.12345678  .00016717  00000-0  10270-3 0  9999",
-            "2 25544  51.6416 123.4567 0003456  87.6543 234.5678 15.72123456789012"]
-    tle2 = ["1 40044U 14033K   25236.23456789  .00001234  00000-0  56789-4 0  9999",
-            "2 40044  97.5678 234.5678 0012345 123.4567 345.6789 14.12345678901234"]
+    # Define 15 satellites with varied TLEs (inspired by LEO satellites)
+    satellites = []
+    base_tle = [
+        "1 99999U 25001A   25236.12345678  .00016717  00000-0  10270-3 0  9999",
+        "2 99999  {inclination} {raan} 0003456  {arg_perigee} {ma} 15.72123456789012"
+    ]
+    for i in range(15):
+        inclination = 51.6416 + (i % 5) * 5.0
+        raan = (i * 24.0) % 360.0
+        ma = (i * 24.0) % 360.0
+        arg_perigee = 87.6543 + (i % 5) * 10.0
+        tle = [base_tle[0].replace("99999", f"999{i:02d}"),
+               base_tle[1].format(inclination=f"{inclination:.4f}", raan=f"{raan:.4f}", ma=f"{ma:.4f}", arg_perigee=f"{arg_perigee:.4f}")]
+        satellites.append(EarthSatellite(tle[0], tle[1], f"Sat{i+1}", ts))
 
-    sat1 = EarthSatellite(tle1[0], tle1[1], "Sat1", ts)
-    sat2 = EarthSatellite(tle2[0], tle2[1], "Sat2", ts)
-
-    # Define time range with UTC timezone
+    # Define time range (~3 hours)
     start = datetime(2025, 8, 24, 0, 0, 0, tzinfo=utc)
-    end = datetime(2025, 8, 25, 0, 0, 0, tzinfo=utc)
+    end = datetime(2025, 8, 24, 3, 0, 0, tzinfo=utc)
 
-    # Define the code to benchmark
-    def run_compute_access_windows():
-        return compute_access_windows(sat1, sat2, start, end)
+    # Measure runtime for 100 pairs
+    start_time = time.perf_counter()
+    
+    # Compute access windows for first 100 unique pairs
+    pair_count = 0
+    for i in range(len(satellites)):
+        for j in range(i + 1, len(satellites)):
+            if pair_count >= 100:
+                break
+            target = satellites[i]
+            observer = satellites[j]
+            
+            if pair_count < 10:
+                print(f"\nComputing access windows for {target.name} (target) and {observer.name} (observer):")
+                sample_times = [start, start + (end - start) / 2, end]
+                for t in sample_times:
+                    t_jd = ts.from_datetime(t)
+                    pos_target = target.at(t_jd).position.km
+                    pos_observer = observer.at(t_jd).position.km
+                    distance = np.sqrt(np.sum((pos_observer - pos_target) ** 2))
+                    print(f"  Distance at {t}: {distance:.2f} km")
 
-    # Measure runtime with timeit
-    number_of_runs = 100  # Number of times to run for averaging
-    total_time = timeit.timeit(run_compute_access_windows, number=number_of_runs)
-    average_time = total_time / number_of_runs
+            windows = compute_access_windows(target, observer, start, end)
+            if pair_count < 10:
+                if windows:
+                    for start_t, end_t in windows:
+                        print(f"  Access window: {start_t} ({start_t.microsecond} µs) to {end_t} ({end_t.microsecond} µs)")
+                else:
+                    print("  No access windows found.")
 
-    print(f"Average runtime over {number_of_runs} runs: {average_time:.3f} seconds")
+            pair_count += 1
+        if pair_count >= 100:
+            break
 
-    # Run once to display results
-    windows = compute_access_windows(sat1, sat2, start, end)
-    for start_t, end_t in windows:
-        print(f"Access window: {start_t} to {end_t}")
+    end_time = time.perf_counter()
+    runtime = end_time - start_time
+    print(f"\nTotal runtime for {pair_count} pairs: {runtime:.3f} seconds")
